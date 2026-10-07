@@ -73,3 +73,60 @@ Authorization: Bearer {{login.response.body.access_token}}
 
 ### No token (expect 401)
 GET {{base}}/projects
+
+### Rescan with default context (internal, medium criticality)
+# @name scan2
+POST {{base}}/projects/{{project.response.body.id}}/scans
+Authorization: Bearer {{login.response.body.access_token}}
+Content-Type: multipart/form-data; boundary=SupplyGuardBoundary
+
+--SupplyGuardBoundary
+Content-Disposition: form-data; name="file"; filename="package-lock.json"
+Content-Type: application/json
+
+< ./fixtures/npm-vulnerable/package-lock.json
+--SupplyGuardBoundary--
+
+### Summary of scan2 (repeat until status is completed)
+GET {{base}}/projects/{{project.response.body.id}}/scans/{{scan2.response.body.id}}/summary
+Authorization: Bearer {{login.response.body.access_token}}
+
+### Set project context (internet-facing, high criticality)
+PATCH {{base}}/projects/{{project.response.body.id}}/context
+Authorization: Bearer {{login.response.body.access_token}}
+Content-Type: application/json
+
+{"internet_facing": true, "criticality": "high"}
+
+### Rescan with the new context
+# @name scan3
+POST {{base}}/projects/{{project.response.body.id}}/scans
+Authorization: Bearer {{login.response.body.access_token}}
+Content-Type: multipart/form-data; boundary=SupplyGuardBoundary
+
+--SupplyGuardBoundary
+Content-Disposition: form-data; name="file"; filename="package-lock.json"
+Content-Type: application/json
+
+< ./fixtures/npm-vulnerable/package-lock.json
+--SupplyGuardBoundary--
+
+### Summary of scan3
+GET {{base}}/projects/{{project.response.body.id}}/scans/{{scan3.response.body.id}}/summary
+Authorization: Bearer {{login.response.body.access_token}}
+
+### Top findings of scan3
+GET {{base}}/projects/{{project.response.body.id}}/scans/{{scan3.response.body.id}}/vulnerabilities?limit=10
+Authorization: Bearer {{login.response.body.access_token}}
+
+### High-risk findings only
+GET {{base}}/projects/{{project.response.body.id}}/scans/{{scan3.response.body.id}}/vulnerabilities?risk_level=high
+Authorization: Bearer {{login.response.body.access_token}}
+
+### Dependencies ranked by risk
+GET {{base}}/projects/{{project.response.body.id}}/scans/{{scan3.response.body.id}}/dependencies?limit=20
+Authorization: Bearer {{login.response.body.access_token}}
+
+### Re-run Gemini analysis for scan3
+POST {{base}}/projects/{{project.response.body.id}}/scans/{{scan3.response.body.id}}/ai-analysis
+Authorization: Bearer {{login.response.body.access_token}}
