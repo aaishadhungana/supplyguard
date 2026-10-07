@@ -18,12 +18,12 @@ class InvalidScanTransition(Exception):
     pass
 
 
-def create_scan(db: Session, project: Project) -> Scan:
+def create_scan(db: Session, project: Project, source_filename: str | None = None) -> Scan:
     db.execute(select(Project.id).where(Project.id == project.id).with_for_update())
     next_number = db.scalar(
         select(func.coalesce(func.max(Scan.number), 0) + 1).where(Scan.project_id == project.id)
     )
-    scan = Scan(project_id=project.id, number=next_number)
+    scan = Scan(project_id=project.id, number=next_number, source_filename=source_filename)
     db.add(scan)
     db.commit()
     db.refresh(scan)

@@ -1,0 +1,2 @@
+class IntelligenceUnavailable(Exception):
+    pass

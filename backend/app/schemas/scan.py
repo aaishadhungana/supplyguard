@@ -13,6 +13,8 @@ class ScanRead(BaseModel):
     project_id: UUID
     number: int
     status: ScanStatus
+    source_filename: str | None
+    warnings: list[str]
     created_at: datetime
     started_at: datetime | None
     completed_at: datetime | None

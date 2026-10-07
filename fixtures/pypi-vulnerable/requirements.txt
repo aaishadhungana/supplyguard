@@ -1,0 +1,5 @@
+django==3.2.0
+flask==1.0
+jinja2==2.10
+pyyaml==5.3.1
+requests==2.19.0

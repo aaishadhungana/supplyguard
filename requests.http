@@ -1,0 +1,75 @@
+@base = http://localhost:8000/api
+
+### Register (409 if it already exists, that is fine)
+POST {{base}}/auth/register
+Content-Type: application/json
+
+{"email": "test@example.com", "password": "a-long-test-password"}
+
+### Login
+# @name login
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{"email": "test@example.com", "password": "a-long-test-password"}
+
+### Create project
+# @name project
+POST {{base}}/projects
+Authorization: Bearer {{login.response.body.access_token}}
+Content-Type: application/json
+
+{"name": "Vulnerable Demo App"}
+
+### Upload npm lockfile and start scan
+# @name scan
+POST {{base}}/projects/{{project.response.body.id}}/scans
+Authorization: Bearer {{login.response.body.access_token}}
+Content-Type: multipart/form-data; boundary=SupplyGuardBoundary
+
+--SupplyGuardBoundary
+Content-Disposition: form-data; name="file"; filename="package-lock.json"
+Content-Type: application/json
+
+< ./fixtures/npm-vulnerable/package-lock.json
+--SupplyGuardBoundary--
+
+### Scan status (repeat until completed)
+GET {{base}}/projects/{{project.response.body.id}}/scans/{{scan.response.body.id}}
+Authorization: Bearer {{login.response.body.access_token}}
+
+### Dependencies
+GET {{base}}/projects/{{project.response.body.id}}/scans/{{scan.response.body.id}}/dependencies?limit=50
+Authorization: Bearer {{login.response.body.access_token}}
+
+### Vulnerabilities
+GET {{base}}/projects/{{project.response.body.id}}/scans/{{scan.response.body.id}}/vulnerabilities?limit=50
+Authorization: Bearer {{login.response.body.access_token}}
+
+### Dependency graph
+GET {{base}}/projects/{{project.response.body.id}}/scans/{{scan.response.body.id}}/graph
+Authorization: Bearer {{login.response.body.access_token}}
+
+### SBOM (CycloneDX)
+GET {{base}}/projects/{{project.response.body.id}}/scans/{{scan.response.body.id}}/sbom
+Authorization: Bearer {{login.response.body.access_token}}
+
+### Upload Python requirements and start scan
+# @name pyscan
+POST {{base}}/projects/{{project.response.body.id}}/scans
+Authorization: Bearer {{login.response.body.access_token}}
+Content-Type: multipart/form-data; boundary=SupplyGuardBoundary
+
+--SupplyGuardBoundary
+Content-Disposition: form-data; name="file"; filename="requirements.txt"
+Content-Type: text/plain
+
+< ./fixtures/pypi-vulnerable/requirements.txt
+--SupplyGuardBoundary--
+
+### Python scan vulnerabilities
+GET {{base}}/projects/{{project.response.body.id}}/scans/{{pyscan.response.body.id}}/vulnerabilities?limit=50
+Authorization: Bearer {{login.response.body.access_token}}
+
+### No token (expect 401)
+GET {{base}}/projects
