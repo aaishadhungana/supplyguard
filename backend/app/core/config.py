@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     app_name: str = "SupplyGuard"
-    app_version: str = "0.2.0"
+    app_version: str = "0.4.0"
     environment: str = "development"
     cors_origins: str = "http://localhost:3000"
 
@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     jwt_secret_key: str = Field(min_length=32)
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = Field(default=30, ge=1, le=1440)
+
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
+    gemini_max_findings: int = Field(default=5, ge=1, le=10)
+    gemini_timeout_seconds: int = Field(default=45, ge=5, le=120)
 
     @property
     def cors_origin_list(self) -> list[str]:
