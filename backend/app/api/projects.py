@@ -7,7 +7,7 @@ from app.api.deps import get_current_user, get_owned_project
 from app.db.session import get_db
 from app.models.project import Project
 from app.models.user import User
-from app.schemas.project import ProjectCreate, ProjectRead
+from app.schemas.project import ProjectContextUpdate, ProjectCreate, ProjectRead
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -18,7 +18,13 @@ def create_project(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Project:
-    project = Project(owner_id=user.id, name=payload.name, description=payload.description)
+    project = Project(
+        owner_id=user.id,
+        name=payload.name,
+        description=payload.description,
+        internet_facing=payload.internet_facing,
+        criticality=payload.criticality,
+    )
     db.add(project)
     try:
         db.commit()
@@ -48,6 +54,20 @@ def list_projects(
 
 @router.get("/{project_id}", response_model=ProjectRead)
 def get_project(project: Project = Depends(get_owned_project)) -> Project:
+    return project
+
+
+@router.patch("/{project_id}/context", response_model=ProjectRead)
+def update_context(
+    payload: ProjectContextUpdate,
+    project: Project = Depends(get_owned_project),
+    db: Session = Depends(get_db),
+) -> Project:
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        if value is not None:
+            setattr(project, key, value)
+    db.commit()
+    db.refresh(project)
     return project
 
 

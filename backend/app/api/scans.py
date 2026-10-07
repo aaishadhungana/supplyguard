@@ -21,17 +21,21 @@ from app.models.dependency import Dependency, DependencyEdge
 from app.models.project import Project
 from app.models.scan import Scan, ScanStatus
 from app.models.vulnerability import Vulnerability
+from app.risk.remediation import remediation_hint
 from app.schemas.results import (
     DependencyGraph,
     DependencyRead,
     GraphEdge,
     GraphNode,
+    ScanSummary,
     VulnerabilityRead,
 )
 from app.schemas.scan import ScanRead
+from app.services.ai import run_ai_analysis
 from app.services.pipeline import run_scan
 from app.services.sbom import build_cyclonedx
 from app.services.scans import create_scan
+from app.services.summary import build_summary
 
 MAX_MANIFEST_BYTES = 5 * 1024 * 1024
 
@@ -47,6 +51,36 @@ def get_owned_scan(
     if scan is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found")
     return scan
+
+
+def _to_read(vulnerability: Vulnerability, dependency: Dependency) -> VulnerabilityRead:
+    return VulnerabilityRead(
+        id=vulnerability.id,
+        osv_id=vulnerability.osv_id,
+        aliases=vulnerability.aliases,
+        summary=vulnerability.summary,
+        severity=vulnerability.severity,
+        cvss_score=vulnerability.cvss_score,
+        cvss_vector=vulnerability.cvss_vector,
+        known_exploited=vulnerability.known_exploited,
+        fixed_versions=vulnerability.fixed_versions,
+        published=vulnerability.published,
+        url=f"https://osv.dev/vulnerability/{vulnerability.osv_id}",
+        dependency_id=dependency.id,
+        package_name=dependency.name,
+        package_version=dependency.version,
+        ecosystem=dependency.ecosystem,
+        is_direct=dependency.is_direct,
+        scope=dependency.scope,
+        risk_score=vulnerability.risk_score,
+        risk_level=vulnerability.risk_level,
+        priority_rank=vulnerability.priority_rank,
+        component_role=vulnerability.component_role,
+        risk_breakdown=vulnerability.risk_breakdown,
+        attack_path=vulnerability.attack_path,
+        ai_analysis=vulnerability.ai_analysis,
+        remediation_hint=remediation_hint(dependency.name, dependency.is_direct, vulnerability.fixed_versions),
+    )
 
 
 @router.post("", response_model=ScanRead, status_code=status.HTTP_202_ACCEPTED)
@@ -99,6 +133,19 @@ def get_scan(scan: Scan = Depends(get_owned_scan)) -> Scan:
     return scan
 
 
+@router.get("/{scan_id}/summary", response_model=ScanSummary)
+def get_scan_summary(scan: Scan = Depends(get_owned_scan), db: Session = Depends(get_db)) -> ScanSummary:
+    return ScanSummary(**build_summary(db, scan))
+
+
+@router.post("/{scan_id}/ai-analysis", response_model=ScanSummary)
+def rerun_ai_analysis(scan: Scan = Depends(get_owned_scan), db: Session = Depends(get_db)) -> ScanSummary:
+    if scan.status != ScanStatus.COMPLETED.value:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Scan is not completed")
+    run_ai_analysis(db, scan)
+    return ScanSummary(**build_summary(db, scan))
+
+
 @router.get("/{scan_id}/dependencies", response_model=list[DependencyRead])
 def list_dependencies(
     limit: int = Query(200, ge=1, le=1000),
@@ -107,18 +154,21 @@ def list_dependencies(
     db: Session = Depends(get_db),
 ) -> list[DependencyRead]:
     vulnerability_count = func.count(Vulnerability.id)
+    top_risk = func.max(Vulnerability.risk_score)
     rows = db.execute(
-        select(Dependency, vulnerability_count)
+        select(Dependency, vulnerability_count, top_risk)
         .outerjoin(Vulnerability, Vulnerability.dependency_id == Dependency.id)
         .where(Dependency.scan_id == scan.id)
         .group_by(Dependency.id)
-        .order_by(vulnerability_count.desc(), Dependency.name, Dependency.version)
+        .order_by(top_risk.desc().nulls_last(), vulnerability_count.desc(), Dependency.name, Dependency.version)
         .limit(limit)
         .offset(offset)
     ).all()
     return [
-        DependencyRead.model_validate(dependency).model_copy(update={"vulnerability_count": count})
-        for dependency, count in rows
+        DependencyRead.model_validate(dependency).model_copy(
+            update={"vulnerability_count": count, "risk_score": risk}
+        )
+        for dependency, count, risk in rows
     ]
 
 
@@ -126,39 +176,27 @@ def list_dependencies(
 def list_vulnerabilities(
     limit: int = Query(200, ge=1, le=1000),
     offset: int = Query(0, ge=0),
+    risk_level: str | None = Query(None, pattern="^(critical|high|medium|low)$"),
     scan: Scan = Depends(get_owned_scan),
     db: Session = Depends(get_db),
 ) -> list[VulnerabilityRead]:
-    rows = db.execute(
+    statement = (
         select(Vulnerability, Dependency)
         .join(Dependency, Vulnerability.dependency_id == Dependency.id)
         .where(Vulnerability.scan_id == scan.id)
-        .order_by(Vulnerability.cvss_score.desc().nulls_last(), Vulnerability.osv_id)
+    )
+    if risk_level:
+        statement = statement.where(Vulnerability.risk_level == risk_level)
+    statement = (
+        statement.order_by(
+            Vulnerability.priority_rank.asc().nulls_last(),
+            Vulnerability.cvss_score.desc().nulls_last(),
+            Vulnerability.osv_id,
+        )
         .limit(limit)
         .offset(offset)
-    ).all()
-    return [
-        VulnerabilityRead(
-            id=vulnerability.id,
-            osv_id=vulnerability.osv_id,
-            aliases=vulnerability.aliases,
-            summary=vulnerability.summary,
-            severity=vulnerability.severity,
-            cvss_score=vulnerability.cvss_score,
-            cvss_vector=vulnerability.cvss_vector,
-            known_exploited=vulnerability.known_exploited,
-            fixed_versions=vulnerability.fixed_versions,
-            published=vulnerability.published,
-            url=f"https://osv.dev/vulnerability/{vulnerability.osv_id}",
-            dependency_id=dependency.id,
-            package_name=dependency.name,
-            package_version=dependency.version,
-            ecosystem=dependency.ecosystem,
-            is_direct=dependency.is_direct,
-            scope=dependency.scope,
-        )
-        for vulnerability, dependency in rows
-    ]
+    )
+    return [_to_read(vulnerability, dependency) for vulnerability, dependency in db.execute(statement).all()]
 
 
 @router.get("/{scan_id}/graph", response_model=DependencyGraph)
