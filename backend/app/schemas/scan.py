@@ -15,6 +15,9 @@ class ScanRead(BaseModel):
     status: ScanStatus
     source_filename: str | None
     warnings: list[str]
+    risk_score: float | None
+    ai_status: str | None
+    ai_message: str | None
     created_at: datetime
     started_at: datetime | None
     completed_at: datetime | None
