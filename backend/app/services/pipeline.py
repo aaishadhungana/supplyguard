@@ -7,10 +7,13 @@ from app.analysis.registry import parse_manifest
 from app.analysis.types import ManifestError, PackageRef, ParsedManifest
 from app.db.session import SessionLocal
 from app.intel.errors import IntelligenceUnavailable
-from app.intel.service import Finding, collect_findings
+from app.intel.service import collect_findings
 from app.models.dependency import Dependency, DependencyEdge
 from app.models.scan import Scan, ScanStatus
 from app.models.vulnerability import Vulnerability
+from app.risk.engine import RiskContext, overall_score
+from app.risk.service import ScoredFinding, score_findings
+from app.services.ai import run_ai_analysis
 from app.services.scans import transition_scan
 
 logger = logging.getLogger(__name__)
@@ -46,14 +49,14 @@ def store_findings(
     db: Session,
     scan: Scan,
     ids: dict[PackageRef, UUID],
-    findings: list[Finding],
+    scored: list[ScoredFinding],
 ) -> None:
-    for finding in findings:
-        advisory = finding.advisory
+    for item in scored:
+        advisory = item.finding.advisory
         db.add(
             Vulnerability(
                 scan_id=scan.id,
-                dependency_id=ids[finding.ref],
+                dependency_id=ids[item.finding.ref],
                 osv_id=advisory.osv_id,
                 aliases=advisory.aliases,
                 summary=advisory.summary,
@@ -63,6 +66,12 @@ def store_findings(
                 known_exploited=advisory.known_exploited,
                 fixed_versions=advisory.fixed_versions,
                 published=advisory.published,
+                risk_score=item.risk.score,
+                risk_level=item.risk.level,
+                priority_rank=item.rank,
+                component_role=item.role,
+                risk_breakdown=item.risk.breakdown,
+                attack_path=item.path,
             )
         )
     db.flush()
@@ -78,8 +87,23 @@ def run_scan(scan_id: UUID, filename: str, content: str) -> None:
             manifest = parse_manifest(filename, content)
             ids = store_inventory(db, scan, manifest)
             findings, intel_warnings = collect_findings(list(ids))
-            store_findings(db, scan, ids, findings)
+
+            context = RiskContext(
+                internet_facing=scan.project.internet_facing,
+                criticality=scan.project.criticality,
+            )
+            scored = score_findings(manifest, findings, context)
+            store_findings(db, scan, ids, scored)
+
+            scan.context = {
+                "internet_facing": context.internet_facing,
+                "criticality": context.criticality,
+            }
+            scan.risk_score = overall_score([item.risk.score for item in scored])
             scan.warnings = [*manifest.warnings, *intel_warnings]
+            db.commit()
+
+            run_ai_analysis(db, scan)
             transition_scan(db, scan, ScanStatus.COMPLETED)
         except (ManifestError, IntelligenceUnavailable) as exc:
             db.rollback()
