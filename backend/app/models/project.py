@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint, func
+from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -19,6 +19,8 @@ class Project(Base):
     owner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(120))
     description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    internet_facing: Mapped[bool] = mapped_column(default=False, server_default=text("false"))
+    criticality: Mapped[str] = mapped_column(String(10), default="medium", server_default="medium")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     scans: Mapped[list["Scan"]] = relationship(
