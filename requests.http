@@ -1,4 +1,5 @@
 @base = http://localhost:8000/api
+@projectId = 09741925-b480-49bc-9c3a-3efdcb6ae446
 
 ### Register (409 if it already exists, that is fine)
 POST {{base}}/auth/register
@@ -6,24 +7,39 @@ Content-Type: application/json
 
 {"email": "test@example.com", "password": "a-long-test-password"}
 
-### Login
+### Login (send this first, the token lasts 30 minutes)
 # @name login
 POST {{base}}/auth/login
 Content-Type: application/json
 
 {"email": "test@example.com", "password": "a-long-test-password"}
 
-### Create project
-# @name project
+### Current user
+GET {{base}}/auth/me
+Authorization: Bearer {{login.response.body.access_token}}
+
+### List projects
+GET {{base}}/projects
+Authorization: Bearer {{login.response.body.access_token}}
+
+### Get project (shows internet_facing and criticality)
+GET {{base}}/projects/{{projectId}}
+Authorization: Bearer {{login.response.body.access_token}}
+
+### Create another project (optional, name must be new)
 POST {{base}}/projects
 Authorization: Bearer {{login.response.body.access_token}}
 Content-Type: application/json
 
-{"name": "Vulnerable Demo App"}
+{"name": "Second Demo App"}
+
+### List scans (use this to find scan ids if you reloaded VS Code)
+GET {{base}}/projects/{{projectId}}/scans
+Authorization: Bearer {{login.response.body.access_token}}
 
 ### Upload npm lockfile and start scan
 # @name scan
-POST {{base}}/projects/{{project.response.body.id}}/scans
+POST {{base}}/projects/{{projectId}}/scans
 Authorization: Bearer {{login.response.body.access_token}}
 Content-Type: multipart/form-data; boundary=SupplyGuardBoundary
 
@@ -35,28 +51,28 @@ Content-Type: application/json
 --SupplyGuardBoundary--
 
 ### Scan status (repeat until completed)
-GET {{base}}/projects/{{project.response.body.id}}/scans/{{scan.response.body.id}}
+GET {{base}}/projects/{{projectId}}/scans/{{scan.response.body.id}}
 Authorization: Bearer {{login.response.body.access_token}}
 
 ### Dependencies
-GET {{base}}/projects/{{project.response.body.id}}/scans/{{scan.response.body.id}}/dependencies?limit=50
+GET {{base}}/projects/{{projectId}}/scans/{{scan.response.body.id}}/dependencies?limit=50
 Authorization: Bearer {{login.response.body.access_token}}
 
 ### Vulnerabilities
-GET {{base}}/projects/{{project.response.body.id}}/scans/{{scan.response.body.id}}/vulnerabilities?limit=50
+GET {{base}}/projects/{{projectId}}/scans/{{scan.response.body.id}}/vulnerabilities?limit=50
 Authorization: Bearer {{login.response.body.access_token}}
 
 ### Dependency graph
-GET {{base}}/projects/{{project.response.body.id}}/scans/{{scan.response.body.id}}/graph
+GET {{base}}/projects/{{projectId}}/scans/{{scan.response.body.id}}/graph
 Authorization: Bearer {{login.response.body.access_token}}
 
 ### SBOM (CycloneDX)
-GET {{base}}/projects/{{project.response.body.id}}/scans/{{scan.response.body.id}}/sbom
+GET {{base}}/projects/{{projectId}}/scans/{{scan.response.body.id}}/sbom
 Authorization: Bearer {{login.response.body.access_token}}
 
 ### Upload Python requirements and start scan
 # @name pyscan
-POST {{base}}/projects/{{project.response.body.id}}/scans
+POST {{base}}/projects/{{projectId}}/scans
 Authorization: Bearer {{login.response.body.access_token}}
 Content-Type: multipart/form-data; boundary=SupplyGuardBoundary
 
@@ -67,16 +83,17 @@ Content-Type: text/plain
 < ./fixtures/pypi-vulnerable/requirements.txt
 --SupplyGuardBoundary--
 
-### Python scan vulnerabilities
-GET {{base}}/projects/{{project.response.body.id}}/scans/{{pyscan.response.body.id}}/vulnerabilities?limit=50
+### Python scan status
+GET {{base}}/projects/{{projectId}}/scans/{{pyscan.response.body.id}}
 Authorization: Bearer {{login.response.body.access_token}}
 
-### No token (expect 401)
-GET {{base}}/projects
+### Python scan vulnerabilities
+GET {{base}}/projects/{{projectId}}/scans/{{pyscan.response.body.id}}/vulnerabilities?limit=50
+Authorization: Bearer {{login.response.body.access_token}}
 
 ### Rescan with default context (internal, medium criticality)
 # @name scan2
-POST {{base}}/projects/{{project.response.body.id}}/scans
+POST {{base}}/projects/{{projectId}}/scans
 Authorization: Bearer {{login.response.body.access_token}}
 Content-Type: multipart/form-data; boundary=SupplyGuardBoundary
 
@@ -88,11 +105,11 @@ Content-Type: application/json
 --SupplyGuardBoundary--
 
 ### Summary of scan2 (repeat until status is completed)
-GET {{base}}/projects/{{project.response.body.id}}/scans/{{scan2.response.body.id}}/summary
+GET {{base}}/projects/{{projectId}}/scans/{{scan2.response.body.id}}/summary
 Authorization: Bearer {{login.response.body.access_token}}
 
 ### Set project context (internet-facing, high criticality)
-PATCH {{base}}/projects/{{project.response.body.id}}/context
+PATCH {{base}}/projects/{{projectId}}/context
 Authorization: Bearer {{login.response.body.access_token}}
 Content-Type: application/json
 
@@ -100,7 +117,7 @@ Content-Type: application/json
 
 ### Rescan with the new context
 # @name scan3
-POST {{base}}/projects/{{project.response.body.id}}/scans
+POST {{base}}/projects/{{projectId}}/scans
 Authorization: Bearer {{login.response.body.access_token}}
 Content-Type: multipart/form-data; boundary=SupplyGuardBoundary
 
@@ -111,22 +128,42 @@ Content-Type: application/json
 < ./fixtures/npm-vulnerable/package-lock.json
 --SupplyGuardBoundary--
 
-### Summary of scan3
-GET {{base}}/projects/{{project.response.body.id}}/scans/{{scan3.response.body.id}}/summary
+### Summary of scan3 (repeat until status is completed)
+GET {{base}}/projects/{{projectId}}/scans/{{scan3.response.body.id}}/summary
 Authorization: Bearer {{login.response.body.access_token}}
 
 ### Top findings of scan3
-GET {{base}}/projects/{{project.response.body.id}}/scans/{{scan3.response.body.id}}/vulnerabilities?limit=10
+GET {{base}}/projects/{{projectId}}/scans/{{scan3.response.body.id}}/vulnerabilities?limit=10
 Authorization: Bearer {{login.response.body.access_token}}
 
 ### High-risk findings only
-GET {{base}}/projects/{{project.response.body.id}}/scans/{{scan3.response.body.id}}/vulnerabilities?risk_level=high
+GET {{base}}/projects/{{projectId}}/scans/{{scan3.response.body.id}}/vulnerabilities?risk_level=high
 Authorization: Bearer {{login.response.body.access_token}}
 
 ### Dependencies ranked by risk
-GET {{base}}/projects/{{project.response.body.id}}/scans/{{scan3.response.body.id}}/dependencies?limit=20
+GET {{base}}/projects/{{projectId}}/scans/{{scan3.response.body.id}}/dependencies?limit=20
 Authorization: Bearer {{login.response.body.access_token}}
 
 ### Re-run Gemini analysis for scan3
-POST {{base}}/projects/{{project.response.body.id}}/scans/{{scan3.response.body.id}}/ai-analysis
+POST {{base}}/projects/{{projectId}}/scans/{{scan3.response.body.id}}/ai-analysis
 Authorization: Bearer {{login.response.body.access_token}}
+
+### No token (expect 401)
+GET {{base}}/projects
+
+### Register second user
+POST {{base}}/auth/register
+Content-Type: application/json
+
+{"email": "other@example.com", "password": "another-long-password"}
+
+### Login second user
+# @name login2
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{"email": "other@example.com", "password": "another-long-password"}
+
+### Second user reads first user's project (expect 404)
+GET {{base}}/projects/{{projectId}}
+Authorization: Bearer {{login2.response.body.access_token}}
