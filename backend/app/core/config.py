@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
 
@@ -9,8 +9,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     app_name: str = "SupplyGuard"
-    app_version: str = "0.4.0"
+    app_version: str = "1.0.0"
     environment: str = "development"
+    log_level: str = "INFO"
     cors_origins: str = "http://localhost:3000"
 
     postgres_user: str
@@ -27,6 +28,16 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-2.5-flash"
     gemini_max_findings: int = Field(default=5, ge=1, le=10)
     gemini_timeout_seconds: int = Field(default=45, ge=5, le=120)
+
+    @model_validator(mode="after")
+    def reject_default_password_in_production(self) -> "Settings":
+        if self.environment == "production" and self.postgres_password == "change_me_locally":
+            raise ValueError("POSTGRES_PASSWORD must be changed before running in production")
+        return self
+
+    @property
+    def is_production(self) -> bool:
+        return self.environment == "production"
 
     @property
     def cors_origin_list(self) -> list[str]:

@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 
 from sqlalchemy import func, select
@@ -5,6 +6,8 @@ from sqlalchemy.orm import Session
 
 from app.models.project import Project
 from app.models.scan import Scan, ScanStatus
+
+logger = logging.getLogger(__name__)
 
 ALLOWED_TRANSITIONS: dict[ScanStatus, set[ScanStatus]] = {
     ScanStatus.PENDING: {ScanStatus.RUNNING, ScanStatus.FAILED},
@@ -27,6 +30,7 @@ def create_scan(db: Session, project: Project, source_filename: str | None = Non
     db.add(scan)
     db.commit()
     db.refresh(scan)
+    logger.info("scan_created scan_id=%s project_id=%s number=%s", scan.id, project.id, scan.number)
     return scan
 
 
@@ -51,4 +55,5 @@ def transition_scan(
     scan.status = new_status.value
     db.commit()
     db.refresh(scan)
+    logger.info("scan_status scan_id=%s from=%s to=%s", scan.id, current.value, new_status.value)
     return scan
