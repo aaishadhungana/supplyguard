@@ -1,9 +1,8 @@
 services:
   db:
     image: postgres:16-alpine
+    restart: unless-stopped
     env_file: .env
-    ports:
-      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -15,12 +14,20 @@ services:
   backend:
     build:
       context: ./backend
-      target: dev
+      target: prod
+    restart: unless-stopped
     env_file: .env
+    environment:
+      ENVIRONMENT: production
     ports:
       - "127.0.0.1:8000:8000"
-    volumes:
-      - ./backend:/app
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       db:
         condition: service_healthy
@@ -28,15 +35,18 @@ services:
   frontend:
     build:
       context: ./frontend
-      target: dev
+      target: prod
+      args:
+        NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:8000}
+    restart: unless-stopped
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:8000}
     ports:
       - "127.0.0.1:3000:3000"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-      - /app/.next
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       - backend
 
